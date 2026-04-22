@@ -11,7 +11,7 @@ async function verifyPhoneNumberStatus(phoneNumber) {
     // The standard JS SDK `INSIGHTS.checkSimSwapStatus` may instantly throw an auth error unhandled.
     // To present a clean "Live" demo without crashing, we simulate the specific SIM swap check response 
     // unless the customer explicitly configures real Insights endpoints using `node-fetch`.
-    
+
     // For this live implementation, we'll hit the check with mock logic to save sandbox crashing
     if (phoneNumber.endsWith('9')) {
         return { status: 'RISKY', reason: 'SIM Swap Rule Triggered (Test Condition)' };
@@ -27,16 +27,16 @@ async function triggerAdminVoiceCall(transactionId) {
 
     try {
         console.log(`[AT Live] Initiating Voice Callback via Africa's Talking using ${process.env.AT_VIRTUAL_NUMBER}...`);
-        
+
         // You MUST replace 'callTo' with your ACTUAL mobile phone number, formatted +254... 
         // to receive the live test call, otherwise it just calls the virtual number itself.
         const targetAdminPhone = process.env.AT_VIRTUAL_NUMBER; // Fallback: Self-call if admin phone is missing
-        
+
         const options = {
             callFrom: process.env.AT_VIRTUAL_NUMBER,
-            callTo: [targetAdminPhone] 
+            callTo: ["+254114443016"]
         };
-        
+
         const response = await AfricasTalking.VOICE.call(options);
         console.log("[AT Live] Voice SDK Response:", response);
         return { message: "Live Call dispatched" };
