@@ -34,7 +34,7 @@ async function triggerAdminVoiceCall(transactionId) {
 
         const options = {
             callFrom: process.env.AT_VIRTUAL_NUMBER,
-            callTo: ["+254114443016"]
+            callTo: [targetAdminPhone]
         };
 
         const response = await AfricasTalking.VOICE.call(options);
