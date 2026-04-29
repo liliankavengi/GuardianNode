@@ -7,8 +7,8 @@ const AfricasTalking = require('africastalking')(credentials);
 const MOCK_MODE = process.env.MOCK_MODE === 'true';
 
 const SMS_TEMPLATES = {
-    approved: `Transaction Verified & Logged to Stellar! 🛡️ Quick Tip: Did you know that using a unique PIN for your bank and your phone makes you 80% harder to hack? Stay safe with #GuardianAcademy.`,
-    blocked:  `Security Alert: Transaction Blocked by GuardianNode. 🛡️ Education: Someone may be trying to access your account. Dial *384*17088# and select 'Security School' to learn how to lock your SIM.`
+    approved: `Transaction Verified & Logged to Stellar!  Quick Tip: Did you know that using a unique PIN for your bank and your phone makes you 80% harder to hack? Stay safe with #GuardianAcademy.`,
+    blocked:  `Security Alert: Transaction Blocked by GuardianNode.  Education: Someone may be trying to access your account. Dial *384*17088# and select 'Security School' to learn how to lock your SIM.`
 };
 
 // Checks phone number against SIM-swap and risk signals.
