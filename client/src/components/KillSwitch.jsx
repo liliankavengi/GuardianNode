@@ -74,7 +74,7 @@ function KillSwitch() {
           </div>
           <div className="bg-navy-base p-6 rounded border border-alert-red/20 text-center mb-4">
             <div className="text-4xl font-mono font-bold text-alert-red tracking-widest">
-              *384*100#
+              *384*17088#
             </div>
           </div>
           <div className="text-xs text-text-secondary font-mono bg-navy-base/50 p-3 rounded space-y-1">

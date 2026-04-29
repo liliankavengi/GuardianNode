@@ -7,7 +7,7 @@ GuardianNode is a professional, security-focused transaction monitoring and frau
 - **Real-Time Dashboard** — Dark-themed interface for monitoring live transactions and API health.
 - **SIM-Swap Detection** — Flags any transaction where the recipient's SIM was swapped within the last 48 hours.
 - **Voice Gate Authorization** — Triggers a live phone call to the admin for critical approvals via Africa's Talking Voice API. Press **1** to approve, **9** to kill and lock down.
-- **USSD Kill Switch** — Dial `*384*100#` from any phone to remotely ARM or DISARM the system entirely.
+- **USSD Kill Switch** — Dial `*384*17088#` from any phone to remotely ARM or DISARM the system entirely.
 - **60-Second Timeout** — Pending transactions auto-rejected if no admin response within 60 seconds.
 - **Immutable Audit Logs** — Every transaction is hashed and committed to the Stellar Testnet ledger with a verifiable explorer link.
 
@@ -27,7 +27,7 @@ flowchart TD
     G -->|Press 9 — Kill| I[Reject + Lock System]
     E -->|No response 60s| J[Auto-Reject Timeout]
 
-    K([Admin Phone\n*384*100#]) -->|USSD| L[Africa's Talking\nUSSD Gateway]
+    K([Admin Phone\n*384*17088#]) -->|USSD| L[Africa's Talking\nUSSD Gateway]
     L -->|POST /api/ussd| B
     B -->|ARM / DISARM| M{SYSTEM_ARMED\nFlag}
     M -->|false| N[403 — All Transactions\nBlocked]
@@ -121,7 +121,7 @@ ngrok http 3001
 | Kill transaction + lock system | Press **9** | Transaction rejected, `SYSTEM_ARMED = false`, all further requests blocked with `403` |
 | No response | (timeout) | Transaction auto-rejected after 60 seconds |
 
-## USSD Kill Switch (`*384*100#`)
+## USSD Kill Switch (`*384*17088#`)
 
 | Input | Action |
 | :--- | :--- |

@@ -6,6 +6,11 @@ const credentials = {
 const AfricasTalking = require('africastalking')(credentials);
 const MOCK_MODE = process.env.MOCK_MODE === 'true';
 
+const SMS_TEMPLATES = {
+    approved: `Transaction Verified & Logged to Stellar! 🛡️ Quick Tip: Did you know that using a unique PIN for your bank and your phone makes you 80% harder to hack? Stay safe with #GuardianAcademy.`,
+    blocked:  `Security Alert: Transaction Blocked by GuardianNode. 🛡️ Education: Someone may be trying to access your account. Dial *384*17088# and select 'Security School' to learn how to lock your SIM.`
+};
+
 // Checks phone number against SIM-swap and risk signals.
 // AT Insights API requires an approved enterprise account; the mock below
 // simulates the 48-hour SIM-swap window check used in production.
@@ -19,7 +24,6 @@ async function verifyPhoneNumberStatus(phoneNumber) {
             status: 'RISKY',
             reason: 'SIM Swap detected within the last 48 hours',
             simSwapWithin48h: true,
-            // Simulated swap timestamp: 12 hours ago
             swapTimestamp: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString()
         };
     }
@@ -38,22 +42,17 @@ async function triggerAdminVoiceCall(transactionId) {
     }
 
     try {
-        // AT_ADMIN_PHONE is the real mobile number to call.
-        // Falls back to the virtual number itself only as a last resort.
         const adminPhone = process.env.AT_ADMIN_PHONE || process.env.AT_VIRTUAL_NUMBER;
         console.log(`[AT Live] Calling admin at ${adminPhone} for TX: ${transactionId}`);
 
-        const options = {
+        const response = await AfricasTalking.VOICE.call({
             callFrom: process.env.AT_VIRTUAL_NUMBER,
             callTo: [adminPhone]
-        };
-
-        const response = await AfricasTalking.VOICE.call(options);
+        });
         console.log('[AT Live] Voice SDK Response:', response);
         return { message: 'Live call dispatched' };
 
     } catch (e) {
-        // Graceful handling for empty AT wallet during demo
         if (e.message && (e.message.toLowerCase().includes('credit') || e.message.toLowerCase().includes('balance'))) {
             console.error(`[AT Live] Insufficient credits — TX ${transactionId} flagged for manual review`);
             return { message: 'Call failed: insufficient AT credits', error: e.message };
@@ -63,7 +62,60 @@ async function triggerAdminVoiceCall(transactionId) {
     }
 }
 
+// Sends a post-transaction educational SMS to the recipient.
+// status: 'approved' | 'blocked'
+async function sendTransactionSMS(phoneNumber, status) {
+    const message = SMS_TEMPLATES[status] || SMS_TEMPLATES.blocked;
+
+    if (MOCK_MODE || !process.env.AT_API_KEY) {
+        console.log(`[AT Mock] SMS → ${phoneNumber}: ${message}`);
+        return { message: 'SMS queued (mock)' };
+    }
+
+    try {
+        const options = { to: [phoneNumber], message };
+        if (process.env.AT_SENDER_ID) options.from = process.env.AT_SENDER_ID;
+
+        const result = await AfricasTalking.SMS.send(options);
+        console.log('[AT Live] SMS sent:', JSON.stringify(result));
+        return result;
+
+    } catch (e) {
+        if (e.message && (e.message.toLowerCase().includes('credit') || e.message.toLowerCase().includes('balance'))) {
+            console.error(`[AT Live] Insufficient credits for SMS to ${phoneNumber}`);
+            return { message: 'SMS failed: insufficient AT credits', error: e.message };
+        }
+        console.error('[AT Live] SMS Error:', e.message || e);
+        return { message: 'SMS dispatch error', error: e.message };
+    }
+}
+
+// Disburses a small airtime reward (e.g. KES 5) as a quiz incentive.
+async function sendAirtime(phoneNumber, amount = '5') {
+    if (MOCK_MODE || !process.env.AT_API_KEY) {
+        console.log(`[AT Mock] Airtime KES ${amount} → ${phoneNumber}`);
+        return { message: 'Airtime queued (mock)' };
+    }
+
+    try {
+        const result = await AfricasTalking.AIRTIME.send({
+            recipients: [{ phoneNumber, amount, currencyCode: 'KES' }]
+        });
+        console.log('[AT Live] Airtime sent:', JSON.stringify(result));
+        return result;
+    } catch (e) {
+        if (e.message && (e.message.toLowerCase().includes('credit') || e.message.toLowerCase().includes('balance'))) {
+            console.error(`[AT Live] Insufficient credits for airtime to ${phoneNumber}`);
+            return { message: 'Airtime failed: insufficient AT credits', error: e.message };
+        }
+        console.error('[AT Live] Airtime Error:', e.message || e);
+        return { message: 'Airtime dispatch error', error: e.message };
+    }
+}
+
 module.exports = {
     verifyPhoneNumberStatus,
-    triggerAdminVoiceCall
+    triggerAdminVoiceCall,
+    sendTransactionSMS,
+    sendAirtime
 };

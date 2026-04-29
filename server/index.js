@@ -2,7 +2,12 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { logTransactionToStellar, getLedgerLogs } = require('./services/stellarService');
-const { verifyPhoneNumberStatus, triggerAdminVoiceCall } = require('./services/africasTalkingService');
+const {
+    verifyPhoneNumberStatus,
+    triggerAdminVoiceCall,
+    sendTransactionSMS,
+    sendAirtime
+} = require('./services/africasTalkingService');
 
 const app = express();
 app.use(cors());
@@ -23,8 +28,9 @@ setInterval(async () => {
     for (const [id, tx] of pendingTransactions.entries()) {
         const age = now - new Date(tx.timestamp).getTime();
         if (age > 60000) {
-            console.log(`[GuardianNode] TX ${id} timed out after 60s — auto-rejecting for safety`);
+            console.log(`[GuardianNode] TX ${id} timed out after 60s — auto-rejecting`);
             await logTransactionToStellar({ ...tx, status: 'REJECTED_TIMEOUT' });
+            sendTransactionSMS(tx.recipientPhone, 'blocked').catch(() => {});
             pendingTransactions.delete(id);
         }
     }
@@ -63,7 +69,6 @@ app.post('/api/transaction', async (req, res) => {
     if (isRisky || isHighValue || isSimSwapRecent) {
         pendingTransactions.set(txData.id, txData);
 
-        // Trigger voice call without blocking the HTTP response
         triggerAdminVoiceCall(txData.id).catch(e =>
             console.error(`[Voice] Dispatch failed for TX ${txData.id}: ${e.message}`)
         );
@@ -84,6 +89,7 @@ app.post('/api/transaction', async (req, res) => {
 
     // Step C: Auto-approve low-risk transactions
     await logTransactionToStellar({ ...txData, status: 'APPROVED' });
+    sendTransactionSMS(recipientPhone, 'approved').catch(() => {});
     res.json({ success: true, message: 'Transaction processed securely.', txId: txData.id });
 });
 
@@ -99,21 +105,21 @@ app.post('/api/voice/callback', async (req, res) => {
     if (dtmfDigits === '1') {
         for (const [id, tx] of pendingTransactions.entries()) {
             await logTransactionToStellar({ ...tx, status: 'APPROVED_BY_ADMIN' });
+            sendTransactionSMS(tx.recipientPhone, 'approved').catch(() => {});
             pendingTransactions.delete(id);
         }
         responseXml = '<Response><Say>Transaction approved and executed. Guardian Node log updated.</Say></Response>';
 
     } else if (dtmfDigits === '9') {
-        // Kill switch: deny transaction AND lock down the entire system
         SYSTEM_ARMED = false;
         for (const [id, tx] of pendingTransactions.entries()) {
             await logTransactionToStellar({ ...tx, status: 'REJECTED_BY_ADMIN' });
+            sendTransactionSMS(tx.recipientPhone, 'blocked').catch(() => {});
             pendingTransactions.delete(id);
         }
         responseXml = '<Response><Say>Kill switch activated. Transaction denied. System is now in emergency lockdown. All further transactions are blocked.</Say></Response>';
 
     } else {
-        // No digit yet — prompt the admin with instructions
         const callbackUrl = process.env.AT_CALLBACK_URL
             ? `${process.env.AT_CALLBACK_URL}/api/voice/callback`
             : '';
@@ -130,27 +136,51 @@ app.post('/api/voice/callback', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// 3. USSD Kill Switch — *384*100#
-//    Allows remote ARM / DISARM from any phone
+// 3. USSD Kill Switch — *384*17088#
+//    Allows remote ARM / DISARM and a 30-second security quiz with airtime reward.
+//    AT accumulates inputs with '*' e.g. "1" → "1*1" → "1*2"
 // ─────────────────────────────────────────────
-app.post('/api/ussd', (req, res) => {
-    const { text } = req.body;
+app.post('/ussd', async (req, res) => {
+    const { text, phoneNumber } = req.body;
     let response;
 
     if (text === '') {
         const status = SYSTEM_ARMED ? 'ACTIVE' : 'LOCKED DOWN';
         response = `CON GuardianNode Control\nStatus: ${status}\n\n1. ARM System (Normal)\n2. Emergency Lockdown\n3. Check Status`;
+
     } else if (text === '1') {
         SYSTEM_ARMED = true;
         console.log('[USSD] System ARMED via USSD');
-        response = 'END GuardianNode ARMED. System is operating normally.';
+        response = `CON GuardianNode ARMED. System is operating normally.\n\nTake a 30-second security quiz to earn 5 KES airtime?\n1. Yes\n2. Not now`;
+
+    } else if (text === '1*1') {
+        // Accepted the quiz — ask the question
+        response = `CON Security Quiz:\nWhat should you do FIRST if your phone is lost or stolen?\n1. Report to your carrier to lock your SIM\n2. Wait to see if someone returns it`;
+
+    } else if (text === '1*1*1') {
+        // Correct answer
+        if (phoneNumber) {
+            sendAirtime(phoneNumber, '5').catch(() => {});
+        }
+        response = `END Correct! Locking your SIM immediately prevents fraud.\n5 KES airtime has been sent to your number.\nStay safe! #GuardianAcademy`;
+
+    } else if (text === '1*1*2') {
+        // Wrong answer — still educational
+        response = `END The correct answer is: Report to your carrier immediately.\nA lost SIM is a security risk — lock it fast!\nDial *384*17088# anytime to learn more. #GuardianAcademy`;
+
+    } else if (text === '1*2') {
+        // Declined quiz
+        response = `END No worries! Dial *384*17088# anytime to earn airtime through security tips. Stay safe!`;
+
     } else if (text === '2') {
         SYSTEM_ARMED = false;
         console.log('[USSD] Emergency LOCKDOWN activated via USSD');
         response = 'END EMERGENCY LOCKDOWN ACTIVE. All transactions are now BLOCKED.';
+
     } else if (text === '3') {
         const status = SYSTEM_ARMED ? 'ARMED — Normal Operation' : 'DISARMED — Lockdown Active';
         response = `END System Status: ${status}`;
+
     } else {
         response = 'END Invalid selection.';
     }
@@ -169,9 +199,11 @@ app.post('/api/mock-voice-approve', async (req, res) => {
 
     if (action === 'approve') {
         await logTransactionToStellar({ ...tx, status: 'APPROVED_BY_ADMIN' });
+        sendTransactionSMS(tx.recipientPhone, 'approved').catch(() => {});
     } else {
         SYSTEM_ARMED = false;
         await logTransactionToStellar({ ...tx, status: 'REJECTED_BY_ADMIN' });
+        sendTransactionSMS(tx.recipientPhone, 'blocked').catch(() => {});
     }
     pendingTransactions.delete(txId);
     res.json({ success: true, systemArmed: SYSTEM_ARMED });
