@@ -1,5 +1,5 @@
 const StellarSdk = require('stellar-sdk');
-const https = require('https');
+const https = require('node:https');
 
 async function fundTestnet() {
     const pair = StellarSdk.Keypair.random();
